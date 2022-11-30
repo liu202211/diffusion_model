@@ -22,7 +22,7 @@ class My_dataset(Dataset):
         # 从文件夹中读取文件
         print('reading files...')
         file_paths = []
-        dir_list = os.listdir(root)[:10000]
+        dir_list = os.listdir(root)
         dir_len = len(dir_list)
         for index, item in enumerate(dir_list):
             p = int(index / dir_len * 100)
