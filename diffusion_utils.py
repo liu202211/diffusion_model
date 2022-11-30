@@ -259,8 +259,8 @@ class Diffusion_model:
                 '''
                 if step % self.save_net_para_step == 0:
                     self.save_parameter()
-            filename = os.path.join(self.temp_path, f'check-{time.time()}-{"NULL" if epoch == -1 else epoch}.jpg')
-            self._p_sample(filename=filename)
+                    filename = os.path.join(self.temp_path, f'check-{time.time()}-{"NULL" if epoch == -1 else epoch}.jpg')
+                    self._p_sample(filename=filename)
             print(f'\r|epoch = {epoch}| loss = {loss_sum / step_epoch}')
 
         writer.close()
@@ -268,7 +268,7 @@ class Diffusion_model:
     def save_parameter(self, loss=-1):
         parameter = self.net.state_dict()
         now_time = datetime.datetime.now().strftime("%H:%M:%S")
-        torch.save(parameter, f't:{now_time}_loss:{loss}.pth')
+        torch.save(parameter, os.path.join(self.temp_path, f't:{now_time}_loss:{loss}.pth'))
 
     def _p_sample(self, filename, img_num=10):
         BATCH_SIZE_P = img_num
