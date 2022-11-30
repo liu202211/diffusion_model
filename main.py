@@ -28,7 +28,7 @@ def args_initialize():
     parser.add_argument('--continue_train', action='store_true', help=help_temp)
     parser.add_argument('--continue-train-path', help='path')
     parser.add_argument('--save_path', default="./", help='module arg save path')
-    parser.add_argument('--dateset_path', default="/root/diff/diffusion_torch/", help='module arg save path')
+    parser.add_argument('--dateset_path', default="./", help='module arg save path')
     parser.add_argument('--temp_path', default="./temp", help='module arg save path')
 
     args = parser.parse_args()
@@ -63,8 +63,7 @@ def train(args):
                                                initial_pad=0,
                                            )  # 网络
                                            )
-    # diff._p_sample()
-    diff.train()
+    diff()
 
 
 def main():
