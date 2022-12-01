@@ -15,7 +15,7 @@ def args_initialize():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch_size', type=int, default=8, help='input batch size')
     parser.add_argument('--time_step', type=int, default=300, help='input batch size')
-    parser.add_argument('-lr', '--learning_rate', type=int, default=0.001, help='input batch size')
+    parser.add_argument('-lr', '--learning_rate', type=int, default=0.0001, help='input batch size')
     parser.add_argument('-d', '--device', default='auto', choices=['cpu', 'cuda', 'auto'],
                         help='device: cpu, cuda, auto')
     parser.add_argument('-e', '--epoch', type=int, default=300, help='number of epochs to train for')
@@ -51,6 +51,7 @@ def train(args):
                                            data_shape=img_size,
                                            get_data_func=lambda x: x,
                                            run_model='train',
+                                           lr=args.learning_rate,
                                            net_module=My_net(
                                                img_channels=3,
                                                base_channels=128,
