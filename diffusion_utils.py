@@ -124,7 +124,8 @@ class Diffusion_model:
                  temp_path: str = './out/temp',
                  save_net_para_step: int = 400,
                  device: str = 'auto',  # auto, cpu, cuda
-                 cuda_num: int = 0
+                 cuda_num: int = 0,
+                 lr = 0.0001
                  ):
         '''
 
@@ -186,6 +187,7 @@ class Diffusion_model:
         assert len(data_shape) == 3
         self.data_shape = data_shape
         self.run_model = run_model
+        self.lr = lr
 
         '''
             加载数据集
@@ -220,7 +222,7 @@ class Diffusion_model:
 
     def train(self):
         loss_func = torch.nn.L1Loss().to(self.device)
-        optim = torch.optim.Adam(params=self.net.parameters(), lr=0.0002)
+        optim = torch.optim.Adam(params=self.net.parameters(), lr=self.lr)
         writer = SummaryWriter(os.path.join(self.temp_path, './logs'))
         step = 0
         total = len(self.data_loader)
