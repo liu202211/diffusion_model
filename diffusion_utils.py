@@ -112,20 +112,15 @@ def _p_sample_func_step(t: torch.Tensor,
 class Diffusion_model:
     def __init__(self, time_step: int,
                  get_bate_func: Get_bate_base,
-                 batch_size: int = 64,
-                 epoch: int = 300,
-                 dataset: torch_data.Dataset = None,
+                 loss_function: torch.nn.Module = torch.nn.L1Loss,
+                 optim_func=torch.optim.Adam,
                  data_shape: typing.Iterable = None,
-                 get_data_func: typing.Callable[..., torch.Tensor] = None,  # 如果非空，数据集数据会经过这一项
                  run_model: str = 'train',  # train, evaluation
                  net_module: torch.nn.Module = None,
                  net_parameter_load: str = None,
-                 net_parameter_save_path: str = './out/parameter',
-                 temp_path: str = './out/temp',
-                 save_net_para_step: int = 400,
                  device: str = 'auto',  # auto, cpu, cuda
                  cuda_num: int = 0,
-                 lr = 0.0001
+                 lr=0.0001,
                  ):
         '''
 
@@ -175,11 +170,6 @@ class Diffusion_model:
         self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1. - self.alphas_cumprod)
 
-        self.batch_size = batch_size
-        self.epoch = epoch
-        self.temp_path = temp_path
-        self.save_net_para_step = save_net_para_step
-        self.dataset = dataset
 
         assert data_shape is not None
         assert isinstance(data_shape, typing.Iterable)
@@ -189,14 +179,8 @@ class Diffusion_model:
         self.run_model = run_model
         self.lr = lr
 
-        '''
-            加载数据集
-        '''
         if run_model == 'train':
-            print('训练模式， 正在加载数据集')
-            assert dataset is not None
-            self.data_loader = torch_data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
-            self.get_data_func = get_data_func if get_data_func is not None else lambda x: x
+            ...
         elif run_model == 'evaluation':
             assert net_parameter_load is not None
         else:
@@ -206,7 +190,10 @@ class Diffusion_model:
             加载网络模型
         '''
         self.net = net_module.to(self.device)
-        self.net_parameter_save_path = net_parameter_save_path
+
+        self.loss_func = loss_function().to(self.device)
+        self.optim = optim_func(params=self.net.parameters(), lr=self.lr)
+        assert isinstance(self.optim, torch.optim.Optimizer)
 
         if net_parameter_load is not None:
             assert os.path.exists(net_parameter_load)
@@ -220,59 +207,30 @@ class Diffusion_model:
                          sqrt_one_minus_alphas_cumprod=self.sqrt_one_minus_alphas_cumprod,
                          t=t, x0=x0, noise=noise)
 
-    def train(self):
-        loss_func = torch.nn.L1Loss().to(self.device)
-        optim = torch.optim.Adam(params=self.net.parameters(), lr=self.lr)
-        writer = SummaryWriter(os.path.join(self.temp_path, './logs'))
-        step = 0
-        total = len(self.data_loader)
+    def train(self, data, y=None):
+        # 采集一组t
+        self.net.zero_grad()
+        t = torch.randint(low=1, high=self.time_step + 1, size=[data.shape[0]], device=self.device)
+        data = data.to(self.device)
+        if y is not None: y = y.to(self.device)
+        noise = torch.randn(data.shape, device=self.device)
+        x_t = self.q_sample(t, data, noise)  # 前向计算xt
+        z_t = self.net(x_t, time=t, y=y)  # 让模型预测xt的噪声
 
-        for epoch in range(self.epoch):
-            step_epoch = 0
-            loss_sum = 0
+        '''
+        计算loss 进行训练
+        '''
+        loss = self.loss_func(noise, z_t)
+        loss.backward()
+        self.optim.step()
+        return loss
 
-            for data in self.data_loader:
-                p = step_epoch / total * 100
-
-                # 采集一组t
-                self.net.zero_grad()
-                t = torch.randint(low=1, high=self.time_step + 1, size=[data.shape[0]], device=self.device)
-
-                data = self.get_data_func(data).to(self.device)
-                noise = torch.randn(data.shape, device=self.device)
-                x_t = self.q_sample(t, data, noise)  # 前向计算xt
-                z_t = self.net(x_t, time=t, y=None)  # 让模型预测xt的噪声
-
-                '''
-                计算loss 进行训练
-                '''
-                loss = loss_func(noise, z_t)
-                loss.backward()
-                optim.step()
-                print(f'\r|epoch = {epoch}| loss: {loss}| {int(p)} |' + '*' * int(p) + '-' * (100 - int(p)) + '|',
-                      end='')
-                writer.add_scalar('loss', loss, step)
-                loss_sum += loss
-                step_epoch += 1
-                step += 1
-
-                '''
-                处理模型参数保存
-                '''
-                if step % self.save_net_para_step == 0:
-                    self.save_parameter()
-                    filename = os.path.join(self.temp_path, f'check-{time.time()}-{"NULL" if epoch == -1 else epoch}.jpg')
-                    self._p_sample(filename=filename)
-            print(f'\r|epoch = {epoch}| loss = {loss_sum / step_epoch}')
-
-        writer.close()
-
-    def save_parameter(self, loss=-1):
+    def save_parameter(self, filename, loss=-1):
         parameter = self.net.state_dict()
-        now_time = datetime.datetime.now().strftime("%H:%M:%S")
-        torch.save(parameter, os.path.join(self.temp_path, f't:{now_time}_loss:{loss}.pth'))
+        # now_time = datetime.datetime.now().strftime("%H:%M:%S")
+        torch.save(parameter, filename)
 
-    def _p_sample(self, filename, img_num=10):
+    def _p_sample(self, img_num=10):
         BATCH_SIZE_P = img_num
 
         _p_sample_step = functools.partial(_p_sample_func_step, alhpa=self.alphas,
@@ -285,24 +243,30 @@ class Diffusion_model:
             with torch.no_grad():
                 xt = _p_sample_step(t=torch.tensor([t], device=self.device).repeat(BATCH_SIZE_P), xt=xt, noise=z)
 
-        self._save_image(xt, filename)
+        # self._save_image(xt, filename)
+        return xt
 
-    @staticmethod
-    def _save_image(imgs, filename):
-        import torchvision
-        torchvision.utils.save_image(imgs, filename, nrow=5, normalize=True)
+    # @staticmethod
+    # def save_image(imgs, filename):
+    #     import torchvision
+    #     torchvision.utils.save_image(imgs, filename, nrow=5, normalize=True)
 
-    def evaluation(self, filename, img_num):
-        self._p_sample(filename=filename, img_num=img_num)
+    def evaluation(self, img_num):
+        return self._p_sample(img_num=img_num)
 
     def __call__(self, *args, **kwargs):
         '''
-        根据初始化的运行模式进行调用， 如果是训练模式， 不接收任何参数
+        根据初始化的运行模式进行调用， 如果是训练模式:
+        data: 图像数据
+        y: 条件
+        ret: None
         如果是eval模式， 需提供 filename和img_num参数
-        filename： 文件保存的位置
         img_num： 生成图像的数量， 默认是10
         '''
         if self.run_model == 'train':
-            self.train()
+            return self.train(*args, **kwargs)
         else:
-            self.evaluation(*args, **kwargs)
+            return self.evaluation(*args, **kwargs)
+
+    def check_out(self, run_model: str = 'train'):
+        self.run_model = run_model
