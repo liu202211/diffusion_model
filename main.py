@@ -2,6 +2,7 @@ import argparse
 import datetime
 import os
 
+import torch
 from torch.utils.tensorboard import SummaryWriter
 
 import diffusion_utils
@@ -11,6 +12,7 @@ from torch.utils.data import Dataset, DataLoader
 
 import os
 import torchvision
+
 
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
@@ -100,11 +102,76 @@ def train(args):
     writer.close()
 
 
+def train_label(args):
+    img_size = [3, 32, 32]
+    # data_path = os.path.join(args.dateset_path, 'faces')
+    # assert os.path.isdir(data_path)
+
+    '''
+    加载扩散模型
+    '''
+    diff = diffusion_utils.Diffusion_model(time_step=args.time_step,
+                                           get_bate_func=diffusion_utils.Get_bate_with_liner(start=0.0001,
+                                                                                             end=0.03,
+                                                                                             time_step=args.time_step),
+                                           data_shape=img_size,
+                                           run_model='train',
+                                           lr=args.learning_rate,
+                                           net_module=My_net(
+                                               img_channels=3,
+                                               base_channels=128,
+                                               channel_mults=(1, 2, 2, 2),
+                                               time_emb_dim=4 * 128,
+                                               norm='gn',
+                                               dropout=0.1,
+                                               attention_resolutions=(1,),
+                                               num_classes=None,
+                                               initial_pad=0,
+                                           ),  # 网络
+                                           device=args.device,
+                                           cuda_num=args.GPU,
+                                           net_parameter_load=args.load_para_path if args.continue_train else None,
+                                           )
+    # 加载数据集
+    data = torchvision.datasets.CIFAR10('./cifar', download=True, train=True,
+                                        transform=torchvision.transforms.ToTensor())
+    data += torchvision.datasets.CIFAR10('./cifar', download=False, train=True,
+                                         transform=torchvision.transforms.ToTensor())
+    loader = DataLoader(data, batch_size=args.batch_size,
+                        shuffle=True)
+    writer = SummaryWriter(os.path.join(args.temp_path, './logs'))
+    step = 0
+    total = len(loader)
+    for epoch in range(args.epoch):
+        step_epoch = 0
+        loss_sum = 0
+        for data, label in loader:
+            p = step_epoch / total * 100
+            loss = diff(data, y=label)  # 将数据喂到网络中
+            print(f'\r|epoch = {epoch}| loss: {loss}| {int(p)} |' + '*' * int(p) + '-' * (100 - int(p)) + '|',
+                  end='')
+            writer.add_scalar('loss', loss, step)
+            loss_sum += loss
+            step_epoch += 1
+            step += 1
+
+            if step % args.save_net_para_step == 0:
+                now_time = datetime.datetime.now().strftime("%H:%M:%S")
+                diff.save_parameter(filename=os.path.join(args.save_para_path, f'{now_time}_loss:{loss}.pth'))
+                diff.check_out(run_model='evaluation')
+                imgs = diff(img_num=10, y=torch.tensor([item for item in range(10)]))
+                filename = os.path.join(args.temp_path, 'test', f'check-{now_time}-{epoch}.jpg')
+                torchvision.utils.save_image(imgs, filename, nrow=5)
+                diff.check_out()
+        print(f'\r|epoch = {epoch}| loss = {loss_sum / step_epoch}')
+    writer.close()
+
+
 def main():
     args = args_initialize()
     if not os.path.exists(args.temp_path):  # args.temp_path
         os.mkdir(args.temp_path)
-    train(args)
+    train_label(args)
 
 
 if __name__ == '__main__':

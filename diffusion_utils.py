@@ -84,9 +84,10 @@ def _p_sample_func_step(t: torch.Tensor,
                         alhpa: torch.Tensor,
                         xt: torch.Tensor,
                         sqrt_one_minus_alphas_cumprod: torch.Tensor,
-                        get_z_t: typing.Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+                        get_z_t: typing.Callable[..., torch.Tensor],
                         noise: torch.Tensor,
                         sigma: torch.Tensor,
+                        y=None,
                         ):
     '''
         该函数执行论文中算法2 Sampling 的第4步，给定一定的参数， 从xt中求解出x_t-1
@@ -100,7 +101,7 @@ def _p_sample_func_step(t: torch.Tensor,
         :return: 返回t-1时刻的图像
     '''
     sqrt_alpha = torch.sqrt(alhpa)
-    z_t = get_z_t(xt, t - 1)
+    z_t = get_z_t(x=xt, y=y, time=t - 1)
     t = t - 1
     part1 = 1. / _extract(sqrt_alpha, t, xt.shape)
     part2 = 1. - _extract(alhpa, t, xt.shape)
@@ -170,7 +171,6 @@ class Diffusion_model:
         self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1. - self.alphas_cumprod)
 
-
         assert data_shape is not None
         assert isinstance(data_shape, typing.Iterable)
         data_shape = list(data_shape)
@@ -230,7 +230,7 @@ class Diffusion_model:
         # now_time = datetime.datetime.now().strftime("%H:%M:%S")
         torch.save(parameter, filename)
 
-    def _p_sample(self, img_num=10):
+    def _p_sample(self, y=None, img_num=10):
         BATCH_SIZE_P = img_num
 
         _p_sample_step = functools.partial(_p_sample_func_step, alhpa=self.alphas,
@@ -241,7 +241,7 @@ class Diffusion_model:
         for t in range(self.time_step, 0, -1):
             z = (torch.randn_like(xt) if t > 1 else torch.zeros_like(xt, dtype=torch.float)).to(self.device)
             with torch.no_grad():
-                xt = _p_sample_step(t=torch.tensor([t], device=self.device).repeat(BATCH_SIZE_P), xt=xt, noise=z)
+                xt = _p_sample_step(t=torch.tensor([t], device=self.device).repeat(BATCH_SIZE_P), xt=xt, y=y, noise=z)
 
         # self._save_image(xt, filename)
         return xt
@@ -251,8 +251,8 @@ class Diffusion_model:
     #     import torchvision
     #     torchvision.utils.save_image(imgs, filename, nrow=5, normalize=True)
 
-    def evaluation(self, img_num):
-        return self._p_sample(img_num=img_num)
+    def evaluation(self, y=None, img_num=10):
+        return self._p_sample(img_num=img_num, y=y)
 
     def __call__(self, *args, **kwargs):
         '''
